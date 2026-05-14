@@ -3,8 +3,8 @@
 A small Node.js app that uses Playwright to open the Cursor usage dashboard, download the current month’s CSV to `downloads/cursor-usage-<local-timestamp>.csv` (wall-clock time in the machine’s local timezone), compute costs, and print:
 
 - spend per day;
-- spend per week (weeks start on Monday);
-- month-to-date total spend.
+- spend per week;
+- spend per month (by model).
 
 Before exporting the CSV, the script selects **Month-to-date** on the dashboard: it clicks the **MTD** segmented control (`aria-label="Month-to-date"`) when present, then falls back to other date-range UI if needed. The page often defaults to a short window (e.g. last 7 days) until MTD is selected.
 

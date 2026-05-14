@@ -432,7 +432,7 @@ function printCosts(rows: UsageRow[], hasModelColumn: boolean): void {
   console.log("\nSpend per day");
   console.table(dailyOutput);
 
-  console.log("\nSpend by week (Monday–Sunday)");
+  console.log("\nSpend per week");
   console.table(weeklyOutput);
 
   if (hasModelColumn && models.length > 0) {
@@ -440,7 +440,7 @@ function printCosts(rows: UsageRow[], hasModelColumn: boolean): void {
     for (const model of models) {
       monthRow[model] = money(monthlyByModel.get(model) ?? 0);
     }
-    console.log("\nMonth-to-date by model");
+    console.log("\nSpend per month");
     console.table([monthRow]);
   }
   console.log("");
