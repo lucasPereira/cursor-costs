@@ -18,9 +18,10 @@ type CsvRow = Record<string, string | undefined>;
 
 async function main(): Promise<void> {
   const csvPath = await downloadCsv();
-  const { rows, dateColumn, costColumn } = await readUsageRows(csvPath);
-  console.log(`Using CSV columns: date="${dateColumn}", spend="${costColumn}" (USD)\n`);
-  printCosts(rows);
+  const { rows, dateColumn, costColumn, modelColumn } = await readUsageRows(csvPath);
+  const modelNote = modelColumn ? `, model="${modelColumn}"` : "";
+  console.log(`Using CSV columns: date="${dateColumn}", spend="${costColumn}" (USD)${modelNote}\n`);
+  printCosts(rows, Boolean(modelColumn));
 }
 
 async function launchBrowser(): Promise<BrowserContext> {
@@ -107,9 +108,16 @@ async function findDownloadButton(page: Page): Promise<Locator> {
   throw new Error("Could not find a control to download the CSV.");
 }
 
+type UsageRow = { date: Date; cost: number; model: string };
+
 async function readUsageRows(
   csvPath: string,
-): Promise<{ rows: Array<{ date: Date; cost: number }>; dateColumn: string; costColumn: string }> {
+): Promise<{
+  rows: UsageRow[];
+  dateColumn: string;
+  costColumn: string;
+  modelColumn: string | undefined;
+}> {
   const csv = await readFile(csvPath, "utf8");
   const records = parse(csv, {
     bom: true,
@@ -125,6 +133,8 @@ async function readUsageRows(
   const columns = Object.keys(records[0]);
   const dateColumn = findDateColumn(columns);
   const costColumn = findCostColumn(columns);
+  const used = new Set([dateColumn, costColumn].filter(Boolean) as string[]);
+  const modelColumn = findModelColumn(columns, used);
 
   if (!dateColumn || !costColumn) {
     throw new Error(`Could not find date/cost columns. Columns: ${columns.join(", ")}`);
@@ -135,44 +145,109 @@ async function readUsageRows(
     .map((record) => ({
       date: parseDate(record[dateColumn]),
       cost: parseCost(record[costColumn]),
+      model: modelColumn ? (record[modelColumn]?.trim() ?? "") : "",
     }))
-    .filter((row): row is { date: Date; cost: number } => row.date !== null && row.cost !== null)
+    .filter((row): row is UsageRow => row.date !== null && row.cost !== null)
     .filter((row) => row.date.getFullYear() === currentMonth.getFullYear())
     .filter((row) => row.date.getMonth() === currentMonth.getMonth());
 
-  return { rows, dateColumn, costColumn };
+  return { rows, dateColumn, costColumn, modelColumn };
 }
 
-function printCosts(rows: Array<{ date: Date; cost: number }>): void {
-  const today = new Date();
-  const daily = new Map<string, number>();
+function aggregateByDayAndModel(rows: UsageRow[], hasModelColumn: boolean): {
+  byDay: Map<string, Map<string, number>>;
+  models: string[];
+} {
+  const byDay = new Map<string, Map<string, number>>();
+  const modelTotals = new Map<string, number>();
 
   for (const row of rows) {
-    const key = toDateKey(row.date);
-    daily.set(key, (daily.get(key) ?? 0) + row.cost);
+    const dayKey = toDateKey(row.date);
+    if (!byDay.has(dayKey)) {
+      byDay.set(dayKey, new Map());
+    }
+    const inner = byDay.get(dayKey)!;
+    const modelKey = hasModelColumn ? (row.model.trim() || "(unspecified)") : "*";
+    const add = row.cost;
+    inner.set(modelKey, (inner.get(modelKey) ?? 0) + add);
+    if (hasModelColumn && modelKey !== "*") {
+      modelTotals.set(modelKey, (modelTotals.get(modelKey) ?? 0) + add);
+    }
   }
 
-  let monthlyTotal = 0;
-  const dailyOutput: Array<{ Day: string; Spend: string }> = [];
-  const weeklyOutput: Array<{ Week: string; Spend: string }> = [];
+  const models = [...modelTotals.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([name]) => name);
+
+  return { byDay, models };
+}
+
+function printCosts(rows: UsageRow[], hasModelColumn: boolean): void {
+  const today = new Date();
+  const { byDay, models } = aggregateByDayAndModel(rows, hasModelColumn);
+
+  const dailyOutput: Record<string, string>[] = [];
+  const weeklyOutput: Record<string, string>[] = [];
   let weekStart = startOfCurrentWeek(new Date(today.getFullYear(), today.getMonth(), 1));
-  let weekTotal = 0;
+  const weekModelSpend = new Map<string, number>();
+  for (const model of models) {
+    weekModelSpend.set(model, 0);
+  }
+  let weekTotalSpend = 0;
+  let monthlyTotal = 0;
+  const monthlyByModel = new Map<string, number>();
+  for (const model of models) {
+    monthlyByModel.set(model, 0);
+  }
 
   for (const day of daysInCurrentMonthUntilToday()) {
-    const dayCost = daily.get(toDateKey(day)) ?? 0;
-    monthlyTotal += dayCost;
-    weekTotal += dayCost;
-    dailyOutput.push({ Day: toDateKey(day), Spend: money(dayCost) });
+    const dayKey = toDateKey(day);
+    const dayMap = byDay.get(dayKey) ?? new Map<string, number>();
+
+    let dayTotal = 0;
+    for (const value of dayMap.values()) {
+      dayTotal += value;
+    }
+
+    monthlyTotal += dayTotal;
+    weekTotalSpend += dayTotal;
+
+    const dayRow: Record<string, string> = { Day: dayKey, Total: money(dayTotal) };
+    if (hasModelColumn && models.length > 0) {
+      for (const model of models) {
+        const part = dayMap.get(model) ?? 0;
+        dayRow[model] = money(part);
+        monthlyByModel.set(model, (monthlyByModel.get(model) ?? 0) + part);
+      }
+    }
+    dailyOutput.push(dayRow);
+
+    if (hasModelColumn && models.length > 0) {
+      for (const model of models) {
+        const part = dayMap.get(model) ?? 0;
+        weekModelSpend.set(model, (weekModelSpend.get(model) ?? 0) + part);
+      }
+    }
 
     const isSunday = day.getDay() === 0;
-    const isToday = toDateKey(day) === toDateKey(today);
+    const isToday = dayKey === toDateKey(today);
     if (isSunday || isToday) {
-      weeklyOutput.push({
-        Week: `${toDateKey(maxDate(weekStart, firstDayOfCurrentMonth()))} to ${toDateKey(day)}`,
-        Spend: money(weekTotal),
-      });
+      const weekRow: Record<string, string> = {
+        Week: `${toDateKey(maxDate(weekStart, firstDayOfCurrentMonth()))} to ${dayKey}`,
+        Total: money(weekTotalSpend),
+      };
+      if (hasModelColumn && models.length > 0) {
+        for (const model of models) {
+          weekRow[model] = money(weekModelSpend.get(model) ?? 0);
+        }
+      }
+      weeklyOutput.push(weekRow);
+
       weekStart = addDays(day, 1);
-      weekTotal = 0;
+      weekTotalSpend = 0;
+      for (const model of models) {
+        weekModelSpend.set(model, 0);
+      }
     }
   }
 
@@ -182,7 +257,69 @@ function printCosts(rows: Array<{ date: Date; cost: number }>): void {
   console.log("\nSpend by week (Monday–Sunday)");
   console.table(weeklyOutput);
 
-  console.log(`\nMonth-to-date total spend: ${money(monthlyTotal)}\n`);
+  if (hasModelColumn && models.length > 0) {
+    const monthRow: Record<string, string> = { Total: money(monthlyTotal) };
+    for (const model of models) {
+      monthRow[model] = money(monthlyByModel.get(model) ?? 0);
+    }
+    console.log("\nMonth-to-date by model");
+    console.table([monthRow]);
+  }
+  console.log("");
+}
+
+function findModelColumn(columns: string[], skip: Set<string>): string | undefined {
+  let best: string | undefined;
+  let bestScore = 0;
+
+  for (const column of columns) {
+    if (skip.has(column)) {
+      continue;
+    }
+    const normalized = normalizeHeader(column);
+    if (!normalized) {
+      continue;
+    }
+    if (normalized.includes("token") || normalized.includes("cost") || normalized.includes("usd")) {
+      continue;
+    }
+    if (normalized.includes("date") || normalized.includes("time") || normalized.includes("created")) {
+      continue;
+    }
+
+    let score = 0;
+    if (normalized === "model") {
+      score += 100;
+    }
+    if (normalized === "modelname") {
+      score += 98;
+    }
+    if (normalized.includes("modelname")) {
+      score += 95;
+    }
+    if (normalized.endsWith("model") || normalized.startsWith("model")) {
+      score += 88;
+    }
+    if (normalized.includes("model") && !normalized.includes("modelcount")) {
+      score += 80;
+    }
+    if (normalized.includes("engine")) {
+      score += 75;
+    }
+    if (normalized.includes("agent") && !normalized.includes("usage")) {
+      score += 70;
+    }
+    if (normalized === "provider" || normalized.includes("provider")) {
+      score += 65;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = column;
+    }
+  }
+
+  return bestScore >= 60 ? best : undefined;
 }
 
 function normalizeHeader(column: string): string {
