@@ -1,10 +1,12 @@
 # Cursor Usage
 
-A small Node.js app that uses Playwright to open the Cursor usage dashboard, download the current month’s CSV to `downloads/cursor-usage-<iso-timestamp>.csv`, compute costs, and print:
+A small Node.js app that uses Playwright to open the Cursor usage dashboard, download the current month’s CSV to `downloads/cursor-usage-<local-timestamp>.csv` (wall-clock time in the machine’s local timezone), compute costs, and print:
 
 - spend per day;
 - spend per week (weeks start on Monday);
 - month-to-date total spend.
+
+Usage timestamps in the CSV are UTC (from Cursor). **Day/week buckets and printed dates** use your **system local timezone** (same calendar as `Date` getters `getFullYear` / `getMonth` / `getDate`).
 
 ## Run
 

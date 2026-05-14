@@ -64,7 +64,7 @@ async function downloadCsv(): Promise<string> {
     await downloadButton.click();
 
     const download = await downloadPromise;
-    const filePath = path.join(DOWNLOADS_DIR, `cursor-usage-${new Date().toISOString()}.csv`);
+    const filePath = path.join(DOWNLOADS_DIR, `cursor-usage-${formatLocalTimestampForFilename(new Date())}.csv`);
     await download.saveAs(filePath);
     return filePath;
   } finally {
@@ -471,6 +471,26 @@ function addDays(date: Date, days: number): Date {
 
 function maxDate(left: Date, right: Date): Date {
   return left > right ? left : right;
+}
+
+function formatLocalTimestampForFilename(date: Date): string {
+  const pad2 = (value: number) => String(value).padStart(2, "0");
+  const pad3 = (value: number) => String(value).padStart(3, "0");
+  return [
+    date.getFullYear(),
+    "-",
+    pad2(date.getMonth() + 1),
+    "-",
+    pad2(date.getDate()),
+    "T",
+    pad2(date.getHours()),
+    "-",
+    pad2(date.getMinutes()),
+    "-",
+    pad2(date.getSeconds()),
+    "-",
+    pad3(date.getMilliseconds()),
+  ].join("");
 }
 
 function toDateKey(date: Date): string {
