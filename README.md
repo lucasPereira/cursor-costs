@@ -1,33 +1,23 @@
 # Cursor Usage
 
-A small Node.js app that uses Playwright to open the Cursor usage dashboard, download the current month’s CSV to `downloads/cursor-usage-<local-timestamp>.csv` (wall-clock time in the machine’s local timezone), compute costs, and print:
+Two things in one repo: **generate a monthly usage report** from the Cursor dashboard and **monitor costs** so you get notified when today’s spend crosses a limit you set. Both use the same Playwright download path. CSV rows are stamped in UTC; the report groups by your machine’s local calendar day.
 
-- spend per day;
-- spend per week;
-- spend per month (by model).
+## Setup
 
-Before exporting the CSV, the script selects **Month-to-date** on the dashboard: it clicks the **MTD** segmented control (`aria-label="Month-to-date"`) when present, then falls back to other date-range UI if needed. The page often defaults to a short window (e.g. last 7 days) until MTD is selected.
+Run `npm install` once after cloning.
 
-Usage timestamps in the CSV are UTC (from Cursor). **Day/week buckets and printed dates** use your **system local timezone** (same calendar as `Date` getters `getFullYear` / `getMonth` / `getDate`).
+## Generate monthly report
 
-## Run
+### Headed — `npm run headed`
 
-```sh
-npm install
-```
+Opens a visible browser. If the script sees a sign-in link, finish logging in **in the browser**, then press **Enter** in the terminal when the prompt tells you to. Only that step is manual. After that, it reloads the usage page, hits **MTD**, downloads the CSV to `downloads/cursor-usage-<local-timestamp>.csv`, and prints the tables. If you’re already logged in, it skips the prompt and just continues.
 
-**Headless (default)** — no browser window:
+### Headless — `npm run headless`
 
-```sh
-npm run headless
-```
+No visible browser. Same flow as headed after you’re already logged in: **MTD**, download, print. Your session is kept in `.playwright/cursor-profile` until it stops working.
 
-**Headed** — visible browser (use this for first-time sign-in, then press Enter in the terminal when the usage page is ready). Session is stored under `.playwright/cursor-profile` and is reused by headless runs.
+## Monitor costs — `npm run monitor`
 
-```sh
-npm run headed
-```
+Copy `.env.example` to `.env` and follow the comments in that file for each variable. On each run it downloads the CSV the same way as the report scripts, sums **today’s spend in USD** from local midnight, and notifies you the first time it goes over your threshold until it drops back under. Desktop notification always; email only if you configure the optional Gmail variables there.
 
-The app prefers **Google Chrome** (`channel: "chrome"`) over Playwright’s bundled Chromium, which often gets past basic bot checks. It also sets a small init script and disables the `AutomationControlled` blink feature. If Chrome is not installed, it falls back to Chromium.
-
-The `downloads/` folder is gitignored.
+On **macOS**, desktop alerts use Apple’s `display notification` (via `osascript`) so they show up like other system notifications and remain available in Notification Center. If you still do not see them there, open **System Settings → Notifications**, find **Script Editor** or **osascript** (whichever appears for these alerts), and ensure notifications are allowed and **Show in Notification Center** is on.

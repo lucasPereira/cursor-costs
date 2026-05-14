@@ -6,18 +6,24 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc --noEmit",
-    "headless": "tsx src/index.ts",
-    "headed": "HEADED=1 tsx src/index.ts"
+    "headless": "HEADED=0 tsx src/index.ts",
+    "headed": "HEADED=1 tsx src/index.ts",
+    "monitor": "tsx src/monitor.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "csv-parse": "^6.2.1",
+    "dotenv": "^16.5.0",
+    "node-notifier": "^10.0.1",
+    "nodemailer": "^7.0.3",
     "playwright": "^1.60.0"
   },
   "devDependencies": {
     "@types/node": "^25.7.0",
+    "@types/node-notifier": "^8.0.5",
+    "@types/nodemailer": "^8.0.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3"
   }
