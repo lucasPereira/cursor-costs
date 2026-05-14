@@ -9,6 +9,10 @@ const CURSOR_USAGE_URL = "https://cursor.com/dashboard/usage";
 const DOWNLOADS_DIR = "downloads";
 const PROFILE_DIR = ".playwright/cursor-profile";
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function isHeadedMode(): boolean {
   const value = process.env.HEADED?.trim().toLowerCase();
   return value === "1" || value === "true" || value === "yes";
@@ -58,6 +62,7 @@ async function downloadCsv(): Promise<string> {
     const page = browser.pages()[0] ?? (await browser.newPage());
     await page.goto(CURSOR_USAGE_URL, { waitUntil: "domcontentloaded" });
     await waitForLoginIfNeeded(page);
+    await selectUsageRangeCurrentMonth(page);
 
     const downloadButton = await findDownloadButton(page);
     const downloadPromise = page.waitForEvent("download", { timeout: 15_000 });
@@ -106,6 +111,179 @@ async function findDownloadButton(page: Page): Promise<Locator> {
   }
 
   throw new Error("Could not find a control to download the CSV.");
+}
+
+/** Cursor usage defaults to a short window (e.g. last 7 days). Select month-to-date (segmented control) or fall back to the date picker before export. */
+async function selectUsageRangeCurrentMonth(page: Page): Promise<void> {
+  await page.waitForLoadState("networkidle").catch(() => undefined);
+  await sleep(800);
+
+  const mtdClicked = await clickMonthToDateSegmentedControl(page);
+  if (mtdClicked) {
+    await page.waitForLoadState("networkidle").catch(() => undefined);
+    await sleep(1_500);
+    return;
+  }
+
+  const opened = await openUsageDateRangeControl(page);
+  if (!opened) {
+    console.warn(
+      "Could not find the usage date-range control; CSV may still reflect the dashboard default (e.g. last 7 days).",
+    );
+    return;
+  }
+
+  await sleep(400);
+
+  const presetClicked = await clickMonthPresetIfVisible(page);
+  if (presetClicked) {
+    await page.waitForLoadState("networkidle").catch(() => undefined);
+    await sleep(1200);
+    await page.keyboard.press("Escape").catch(() => undefined);
+    return;
+  }
+
+  await clickCustomRangeIfPresent(page);
+  const filled = await fillMonthRangeDateInputs(page);
+  if (filled) {
+    await clickApplyOrUpdateIfPresent(page);
+    await page.waitForLoadState("networkidle").catch(() => undefined);
+    await sleep(1200);
+    await page.keyboard.press("Escape").catch(() => undefined);
+    return;
+  }
+
+  console.warn(
+    "Could not set date range to the current month; CSV may still reflect the dashboard default (e.g. last 7 days).",
+  );
+  await page.keyboard.press("Escape").catch(() => undefined);
+}
+
+async function clickMonthToDateSegmentedControl(page: Page): Promise<boolean> {
+  const candidates: Locator[] = [
+    page.getByRole("button", { name: /^Month-to-date$/i }),
+    page.getByLabel(/^Month-to-date$/i),
+    page.locator('button.dashboard-segmented-control-option[aria-label="Month-to-date"]'),
+    page.locator('button[title="Month-to-date"]'),
+    page.locator("button.dashboard-segmented-control-option").filter({ hasText: /^MTD$/ }),
+  ];
+
+  for (const locator of candidates) {
+    const button = locator.first();
+    if ((await button.count()) === 0) {
+      continue;
+    }
+    if (!(await button.isVisible({ timeout: 3_000 }).catch(() => false))) {
+      continue;
+    }
+
+    const pressed = await button.getAttribute("aria-pressed");
+    if (pressed === "true") {
+      return true;
+    }
+
+    await button.click();
+    return true;
+  }
+
+  return false;
+}
+
+async function clickCustomRangeIfPresent(page: Page): Promise<void> {
+  const candidates = [
+    page.getByRole("menuitem", { name: /custom|pick dates|specific dates/i }),
+    page.getByRole("option", { name: /custom|pick dates|specific dates/i }),
+    page.getByText(/^Custom range$/i),
+    page.getByText(/^Custom$/i),
+  ];
+
+  for (const locator of candidates) {
+    const first = locator.first();
+    if (await first.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      await first.click();
+      await sleep(400);
+      return;
+    }
+  }
+}
+
+async function openUsageDateRangeControl(page: Page): Promise<boolean> {
+  const triggers = [
+    page.getByRole("button", { name: /last\s*7|7\s*days|last\s*30|30\s*days|past\s*week|date\s*range|time\s*range|custom/i }),
+    page.getByRole("combobox").filter({ hasText: /day|week|month|last|past|range|\d{1,2}[./-]\d{1,2}/i }),
+    page.locator("header").getByRole("button").filter({ hasText: /\d|day|week|month|range|last|past/i }),
+  ];
+
+  for (const locator of triggers) {
+    const first = locator.first();
+    if ((await first.count()) === 0) {
+      continue;
+    }
+    if (await first.isVisible({ timeout: 2_500 }).catch(() => false)) {
+      await first.click();
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function clickMonthPresetIfVisible(page: Page): Promise<boolean> {
+  const presets = [
+    page.getByRole("menuitem", { name: /this month|month to date|current month|mtd|billing month|billing period/i }),
+    page.getByRole("option", { name: /this month|month to date|current month|mtd|billing month|billing period/i }),
+    page.getByRole("button", { name: /this month|month to date|current month|mtd/i }),
+    page.getByText(/^This month$/i),
+    page.getByText(/^Month to date$/i),
+  ];
+
+  for (const locator of presets) {
+    const first = locator.first();
+    if ((await first.count()) === 0) {
+      continue;
+    }
+    if (await first.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      await first.click();
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function localMonthRangeForDateInputs(): { start: string; end: string } {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const start = `${year}-${pad(month)}-01`;
+  const end = `${year}-${pad(month)}-${pad(now.getDate())}`;
+  return { start, end };
+}
+
+async function fillMonthRangeDateInputs(page: Page): Promise<boolean> {
+  const dialog = page.locator('[role="dialog"]').first();
+  let inputs = dialog.locator('input[type="date"]');
+  let count = await inputs.count();
+  if (count < 2) {
+    inputs = page.locator('input[type="date"]');
+    count = await inputs.count();
+  }
+  if (count < 2) {
+    return false;
+  }
+
+  const { start, end } = localMonthRangeForDateInputs();
+  await inputs.nth(0).fill(start);
+  await inputs.nth(1).fill(end);
+  return true;
+}
+
+async function clickApplyOrUpdateIfPresent(page: Page): Promise<void> {
+  const apply = page.getByRole("button", { name: /apply|update|save|done|ok|set|confirm/i }).first();
+  if (await apply.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await apply.click();
+  }
 }
 
 type UsageRow = { date: Date; cost: number; model: string };
