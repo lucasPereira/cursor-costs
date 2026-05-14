@@ -1,0 +1,24 @@
+{
+  "name": "cursor-usage",
+  "version": "1.0.0",
+  "description": "Download Cursor usage CSV and print spend summaries.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "headless": "tsx src/index.ts",
+    "headed": "HEADED=1 tsx src/index.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "csv-parse": "^6.2.1",
+    "playwright": "^1.60.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  }
+}
