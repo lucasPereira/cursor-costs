@@ -4,18 +4,32 @@ import os from "node:os";
 import nodemailer from "nodemailer";
 import notifier from "node-notifier";
 
+import {
+  checkSpendLogLine,
+  envMonitorIntervalMinutesInvalid,
+  envMonitorIntervalMinutesMissing,
+  envSpendThresholdInvalid,
+  envSpendThresholdMissing,
+  fatalErrorMessage,
+  limitExceededBody,
+  limitExceededTitle,
+  logCheckFailed,
+  logDesktopNotificationFailed,
+  logEmailNotificationFailed,
+  routineUsageDesktopBody,
+  routineUsageDesktopTitle,
+  startupBannerLine,
+} from "./monitorMessages.js";
 import { downloadCsv, parseHeadedEnv, readUsageRows, sumTodaySpendUsd } from "./usageWorker.js";
 
 function intervalMs(): number {
   const raw = process.env.MONITOR_INTERVAL_MINUTES?.trim();
   if (raw === undefined || raw === "") {
-    throw new Error(
-      "Define MONITOR_INTERVAL_MINUTES in your .env file (positive number: minutes between each check).",
-    );
+    throw new Error(envMonitorIntervalMinutesMissing());
   }
   const minutes = Number(raw);
   if (!Number.isFinite(minutes) || minutes <= 0) {
-    throw new Error("MONITOR_INTERVAL_MINUTES must be a positive number.");
+    throw new Error(envMonitorIntervalMinutesInvalid());
   }
   return minutes * 60 * 1000;
 }
@@ -23,17 +37,13 @@ function intervalMs(): number {
 function thresholdUsd(): number {
   const raw = process.env.SPEND_THRESHOLD_USD?.trim();
   if (raw === undefined || raw === "") {
-    throw new Error("Define SPEND_THRESHOLD_USD in your .env file (positive USD amount for the alert).");
+    throw new Error(envSpendThresholdMissing());
   }
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0) {
-    throw new Error("SPEND_THRESHOLD_USD must be a positive number.");
+    throw new Error(envSpendThresholdInvalid());
   }
   return value;
-}
-
-function formatMoney(value: number): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
 /** AppleScript string literal (double-quoted). */
@@ -46,25 +56,47 @@ function darwinNotificationSingleLineBody(message: string): string {
   return message.replace(/\r?\n+/g, " ").trim();
 }
 
+type DesktopNotifyTone = "routine" | "limitExceeded";
+
+const DARWIN_SOUND_ROUTINE = "Purr";
+const DARWIN_SOUND_LIMIT_EXCEEDED = "Glass";
+
+type DesktopNotifyOptions = {
+  subtitle?: string;
+  tone?: DesktopNotifyTone;
+};
+
 /** macOS: `osascript` + `display notification` integrates with Notification Center better than `node-notifier`’s bundled `terminal-notifier`. */
-function notifyDesktopDarwin(title: string, message: string): void {
+function notifyDesktopDarwin(title: string, message: string, options: DesktopNotifyOptions | undefined): void {
+  const tone = options?.tone ?? "routine";
+  const soundName = tone === "limitExceeded" ? DARWIN_SOUND_LIMIT_EXCEEDED : DARWIN_SOUND_ROUTINE;
   const titleOneLine = title.split(/\r?\n/)[0] ?? title;
   const body = darwinNotificationSingleLineBody(message);
-  const source = `display notification ${appleScriptQuotedSegment(body)} with title ${appleScriptQuotedSegment(titleOneLine)}`;
+  let source = `display notification ${appleScriptQuotedSegment(body)} with title ${appleScriptQuotedSegment(titleOneLine)}`;
+  const sub = options?.subtitle?.trim();
+  if (sub) {
+    source += ` subtitle ${appleScriptQuotedSegment(darwinNotificationSingleLineBody(sub))}`;
+  }
+  source += ` sound name ${appleScriptQuotedSegment(soundName)}`;
 
   execFile("/usr/bin/osascript", ["-e", source], (error) => {
     if (error) {
-      console.error("Desktop notification failed:", error.message);
+      console.error(logDesktopNotificationFailed(error.message));
     }
   });
 }
 
-function notifyDesktop(title: string, message: string): void {
+function notifyDesktop(title: string, message: string, options?: DesktopNotifyOptions): void {
   if (os.platform() === "darwin") {
-    notifyDesktopDarwin(title, message);
+    notifyDesktopDarwin(title, message, options);
     return;
   }
-  notifier.notify({ title, message, timeout: false });
+  const sub = options?.subtitle?.trim();
+  notifier.notify(
+    sub
+      ? { title, message, subtitle: sub, sound: true, timeout: false }
+      : { title, message, sound: true, timeout: false },
+  );
 }
 
 async function notifyEmailIfConfigured(subject: string, text: string): Promise<void> {
@@ -89,65 +121,84 @@ async function notifyEmailIfConfigured(subject: string, text: string): Promise<v
   });
 }
 
-let armed = true;
+function formatLocalTimeHHMM(date: Date): string {
+  const h = date.getHours();
+  const m = date.getMinutes();
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+let previousWasOver: boolean | undefined = undefined;
+let previousTodaySpend: number | undefined = undefined;
 
 async function runCheck(): Promise<void> {
   const threshold = thresholdUsd();
-  const csvPath = await downloadCsv();
-  const { rows } = await readUsageRows(csvPath);
-  const todaySpend = sumTodaySpendUsd(rows);
-  const stamp = new Date().toISOString();
+  let todaySpend: number | null = null;
 
-  console.log(`${stamp}  today (local) spend: ${formatMoney(todaySpend)}  threshold: ${formatMoney(threshold)}`);
+  try {
+    const csvPath = await downloadCsv();
+    const { rows } = await readUsageRows(csvPath);
+    const spend = sumTodaySpendUsd(rows);
+    todaySpend = spend;
+    const now = new Date();
+    const timeLabel = formatLocalTimeHHMM(now);
 
-  if (todaySpend > threshold) {
-    if (!armed) {
-      return;
+    console.log(checkSpendLogLine(timeLabel, spend));
+
+    const nowOver = spend > threshold;
+    /** First time above limit this “cycle”, or first read already above: routine is suppressed this check only. */
+    const crossedAbove = nowOver && previousWasOver !== true;
+
+    if (crossedAbove) {
+      const overBy = spend - threshold;
+      const title = limitExceededTitle();
+      const message = limitExceededBody(spend, overBy);
+
+      try {
+        notifyDesktop(title, message, { tone: "limitExceeded" });
+      } catch (error) {
+        console.error(
+          logDesktopNotificationFailed(error instanceof Error ? error.message : String(error)),
+        );
+      }
+
+      try {
+        await notifyEmailIfConfigured(title, `${message}`);
+      } catch (error) {
+        console.error(logEmailNotificationFailed(error instanceof Error ? error.message : String(error)));
+      }
     }
-    armed = false;
 
-    const overBy = todaySpend - threshold;
-    const dayLabel = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date());
-    const title = "Cursor daily spend limit exceeded";
-    const message =
-      `You have exceeded the daily spend limit you set for Cursor usage.` +
-      `\n\n` +
-      `Spent: ${formatMoney(todaySpend)}.\n` +
-      `Over limit: ${formatMoney(overBy)}.`;
-
-    try {
-      notifyDesktop(title, message);
-    } catch (error) {
-      console.error("Desktop notification failed:", error instanceof Error ? error.message : error);
+    if (!crossedAbove) {
+      const prevSpend = previousTodaySpend ?? spend;
+      const message = routineUsageDesktopBody(spend, prevSpend);
+      try {
+        notifyDesktop(routineUsageDesktopTitle(), message);
+      } catch (error) {
+        console.error(
+          logDesktopNotificationFailed(error instanceof Error ? error.message : String(error)),
+        );
+      }
     }
-
-    try {
-      await notifyEmailIfConfigured(title, `${message}`);
-    } catch (error) {
-      console.error("Email notification failed:", error instanceof Error ? error.message : error);
+  } finally {
+    if (todaySpend !== null) {
+      previousTodaySpend = todaySpend;
+      previousWasOver = todaySpend > threshold;
     }
-  } else {
-    armed = true;
   }
 }
 
 async function main(): Promise<void> {
-  const headed = parseHeadedEnv();
+  parseHeadedEnv();
   const limit = thresholdUsd();
   const every = intervalMs();
-  const emailOn =
-    Boolean(process.env.GMAIL_USER?.trim()) &&
-    Boolean(process.env.GMAIL_APP_PASSWORD?.trim()) &&
-    Boolean(process.env.NOTIFY_EMAIL_TO?.trim());
-  console.log(
-    `Browser: ${headed ? "headed" : "headless"}. Monitoring every ${every / 60_000} min. Alert if today's spend (local midnight onward) exceeds ${formatMoney(limit)}. Email: ${emailOn ? "on" : "off"}.`,
-  );
+  console.log(startupBannerLine(every / 60_000, limit));
+  console.log();
 
   const loop = async (): Promise<void> => {
     try {
       await runCheck();
     } catch (error) {
-      console.error("Check failed:", error instanceof Error ? error.message : error);
+      console.error(logCheckFailed(fatalErrorMessage(error)));
     }
     setTimeout(loop, every);
   };
@@ -156,6 +207,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
+  console.error(fatalErrorMessage(error));
   process.exitCode = 1;
 });
