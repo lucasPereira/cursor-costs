@@ -127,6 +127,10 @@ function formatLocalTimeHHMM(date: Date): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+function sameSpendCents(a: number, b: number): boolean {
+  return Math.round(a * 100) === Math.round(b * 100);
+}
+
 let previousWasOver: boolean | undefined = undefined;
 let previousTodaySpend: number | undefined = undefined;
 
@@ -168,7 +172,11 @@ async function runCheck(): Promise<void> {
       }
     }
 
-    if (!crossedAbove) {
+    const spendChanged =
+      previousTodaySpend !== undefined && !sameSpendCents(spend, previousTodaySpend);
+    const isFirstSuccessfulRead = previousTodaySpend === undefined;
+
+    if (!crossedAbove && (isFirstSuccessfulRead || spendChanged)) {
       const prevSpend = previousTodaySpend ?? spend;
       const message = routineUsageDesktopBody(spend, prevSpend);
       try {
