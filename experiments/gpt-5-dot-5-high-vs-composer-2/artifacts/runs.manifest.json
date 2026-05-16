@@ -7,7 +7,7 @@
     "gpt-5.5-high"
   ],
   "branchPattern": "chore/migrate-<function-name>/<model>",
-  "nextFirstModel": "composer-2",
+  "nextFirstModel": "gpt-5.5-high",
   "subjectWorkspace": {
     "path": "experiments/gpt-5-dot-5-high-vs-composer-2/messengerx-workspace",
     "branch": "dev",
