@@ -8,7 +8,13 @@
     "build": "tsc --noEmit",
     "headless": "HEADED=0 tsx src/index.ts",
     "headed": "HEADED=1 tsx src/index.ts",
-    "monitor": "tsx src/monitor.ts"
+    "monitor": "tsx src/monitor.ts",
+    "experiment:start": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts start",
+    "experiment:finish": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts finish",
+    "experiment:select": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts select",
+    "experiment:download-csv": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts download-csv",
+    "experiment:analyze": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts analyze",
+    "experiment:bootstrap-submodules": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts bootstrap-submodules"
   },
   "keywords": [],
   "author": "",
