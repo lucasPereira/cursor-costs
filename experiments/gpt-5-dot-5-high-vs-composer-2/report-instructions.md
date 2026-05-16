@@ -32,7 +32,9 @@ Sets the context for the rest of the report. Must include:
 Describes the experiment design and how it was executed. Must include:
 
 - Paired design with alternating model order across functions to reduce carryover bias.
+- The steps necesary to execute the experiment: start the pair, finish the the first migration, finish the second migration, select the result, register the observations, download the usage data, analyze the results, and update the final report.
 - Each migration runs in a fresh session/window per model.
+- The same start prompt is used for both models.
 - Agent-written qualitative analyses use the `claude-opus-4-7-thinking-medium` model, not `composer-2` or `gpt-5.5-high`, so the reviewer is independent of the models under test and the qualitative reading is not biased toward either one.
 
 ### Results
