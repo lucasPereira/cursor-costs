@@ -54,7 +54,3 @@ Interprets the results combining quantitative data with the human and agent obse
 ### Conclusion
 
 States whether either model performed better overall and summarizes the main findings from the previous sections in a few short paragraphs.
-
-## Interpretation rules
-
-Treat statistical tests as evidence, not proof. Prefer paired differences, effect sizes, confidence intervals, and visible distributions over isolated p-values.
