@@ -11,7 +11,6 @@ import {
   nextPairId,
   nextRunId,
   saveManifest,
-  validateModel,
   validateSelectionDecision,
 } from "./manifest.js";
 import type {
@@ -20,6 +19,7 @@ import type {
   ExperimentRun,
   ModelName,
   RunStatus,
+  SelectionDecision,
   SubjectRepositoryKey,
 } from "./types.js";
 import { resolveBranchCommit } from "./gitMetrics.js";
@@ -39,10 +39,14 @@ async function main(): Promise<void> {
       break;
     case "download-csv":
       console.log(`Saved CSV to ${await downloadExperimentCsv()}`);
+      console.log("Next step: npm run experiment:analyze");
       break;
     case "analyze":
       await analyzeExperiment(args.csv);
       console.log("Analysis results and charts generated.");
+      console.log(
+        "Next step: invoke the update-final-report skill to refresh artifacts/final-report.md",
+      );
       break;
     case "bootstrap-submodules":
       await bootstrapSubmodules();
@@ -50,21 +54,17 @@ async function main(): Promise<void> {
     case "migrate-start":
       await migrateStart(args);
       break;
-    case "migrate-finish-first":
-      await migrateFinishFirst(args);
-      break;
-    case "migrate-finish-second":
-      await migrateFinishSecond(args);
+    case "migrate-finish":
+      await migrateFinish(args);
       break;
     default:
       throw new Error(
         [
           "Usage:",
           "  experiment:bootstrap-submodules",
-          "  experiment:migrate-start -- --function <name> --model <composer-2|gpt-5.5-high>",
-          "  experiment:migrate-finish-first -- --status <succeeded|failed>",
-          "  experiment:migrate-finish-second -- --status <succeeded|failed>",
-          "  experiment:select -- --decision <composer-2|gpt-5.5-high|both|neither> [--pair <pairId>]",
+          "  experiment:migrate-start -- --function <name>",
+          "  experiment:migrate-finish -- --status <succeeded|failed>",
+          "  experiment:select -- --decision <composer-2|gpt-5.5-high|both|neither>",
           "  experiment:download-csv",
           "  experiment:analyze",
         ].join("\n"),
@@ -75,23 +75,20 @@ async function main(): Promise<void> {
 async function selectPair(args: Args): Promise<void> {
   const decision = validateSelectionDecision(args.decision);
   const manifest = await loadManifest();
-  const pair = args.pair
-    ? manifest.pairs.find((candidate) => candidate.pairId === args.pair)
-    : latestOpenPair(manifest);
+  const pair = latestOpenPair(manifest);
   if (!pair) {
-    throw new Error(
-      args.pair
-        ? `Pair not found: ${args.pair}`
-        : "No open pair found in the manifest. Pass --pair to target a specific pair.",
-    );
+    throw new Error("No open pair found in the manifest.");
   }
 
   pair.selectedDecision = decision;
   pair.selectedAt = new Date().toISOString();
   pair.selectedRunIds = selectedRunIdsForDecision(manifest.runs, pair.pairId, decision);
+  manifest.nextFirstModel = otherModelOf(manifest.nextFirstModel);
   await saveManifest(manifest);
 
   console.log(`Selected ${decision} for ${pair.pairId}`);
+  console.log(`Next pair will start with ${manifest.nextFirstModel}.`);
+  console.log("Next step: invoke the register-observations skill to log notes for this pair");
 }
 
 async function bootstrapSubmodules(): Promise<void> {
@@ -103,14 +100,15 @@ async function bootstrapSubmodules(): Promise<void> {
     await runGit(["-C", repoPath, "checkout", config.baseBranch]);
   }
   console.log("Submodules initialized and base branches checked out.");
+  console.log("Next step: npm run experiment:migrate-start -- --function <name>");
 }
 
 async function migrateStart(args: Args): Promise<void> {
   const functionName = required(args.function, "--function");
-  const model = validateModel(args.model);
   const targetRepo = validateTargetRepo(args["target-repo"] ?? "messengerx_backend");
 
   const manifest = await loadManifest();
+  const model = manifest.nextFirstModel;
   const repoPath = repoPathFor(manifest, targetRepo);
   const baseBranch = manifest.subjectWorkspace.repositories[targetRepo].baseBranch;
 
@@ -124,19 +122,21 @@ async function migrateStart(args: Args): Promise<void> {
   await runGit(["-C", repoPath, "checkout", "-b", run.branch]);
 
   console.log(formatStartedRun(run));
+  console.log("Next step (after the migration): npm run experiment:migrate-finish -- --status <succeeded|failed>");
 }
 
-async function migrateFinishFirst(args: Args): Promise<void> {
+async function migrateFinish(args: Args): Promise<void> {
   const status = validateFinishStatus(args.status);
 
   const manifest = await loadManifest();
   const inProgress = findSingleInProgressRun(manifest);
   const pairRuns = manifest.runs.filter((candidate) => candidate.pairId === inProgress.pairId);
-  if (pairRuns.length !== 1) {
+  if (pairRuns.length !== 1 && pairRuns.length !== 2) {
     throw new Error(
-      `migrate-finish-first expects exactly one run in pair ${inProgress.pairId}. Found ${pairRuns.length}.`,
+      `Pair ${inProgress.pairId} has ${pairRuns.length} runs; expected 1 (first) or 2 (second).`,
     );
   }
+  const isFirstOfPair = pairRuns.length === 1;
 
   const targetRepo = inProgress.targetRepo;
   const repoPath = repoPathFor(manifest, targetRepo);
@@ -148,46 +148,27 @@ async function migrateFinishFirst(args: Args): Promise<void> {
   const commitHash = await resolveBranchCommit(manifest, inProgress);
   await finalizeRun(manifest, inProgress, status, commitHash);
 
-  const otherModel = otherModelOf(inProgress.model);
-  const nextRun = registerRun(manifest, inProgress.functionName, otherModel, targetRepo);
-  await saveManifest(manifest);
+  if (isFirstOfPair) {
+    const otherModel = otherModelOf(inProgress.model);
+    const nextRun = registerRun(manifest, inProgress.functionName, otherModel, targetRepo);
+    await saveManifest(manifest);
 
-  await runGit(["-C", repoPath, "checkout", baseBranch]);
-  await tryFastForwardPull(repoPath);
-  await runGit(["-C", repoPath, "checkout", "-b", nextRun.branch]);
+    await runGit(["-C", repoPath, "checkout", baseBranch]);
+    await tryFastForwardPull(repoPath);
+    await runGit(["-C", repoPath, "checkout", "-b", nextRun.branch]);
 
-  console.log(
-    [
-      formatFinishedRun(inProgress),
-      "",
-      formatStartedRun(nextRun),
-    ].join("\n"),
-  );
-}
-
-async function migrateFinishSecond(args: Args): Promise<void> {
-  const status = validateFinishStatus(args.status);
-
-  const manifest = await loadManifest();
-  const inProgress = findSingleInProgressRun(manifest);
-  const pairRuns = manifest.runs.filter((candidate) => candidate.pairId === inProgress.pairId);
-  if (pairRuns.length !== 2) {
-    throw new Error(
-      `migrate-finish-second expects two runs in pair ${inProgress.pairId}. Found ${pairRuns.length}.`,
+    console.log(
+      [
+        formatFinishedRun(inProgress),
+        "",
+        formatStartedRun(nextRun),
+        "Next step (after the migration): npm run experiment:migrate-finish -- --status <succeeded|failed>",
+      ].join("\n"),
     );
+    return;
   }
 
-  const targetRepo = inProgress.targetRepo;
-  const repoPath = repoPathFor(manifest, targetRepo);
-  const baseBranch = manifest.subjectWorkspace.repositories[targetRepo].baseBranch;
-
-  await ensureOnBranch(repoPath, inProgress.branch);
-  await commitMigration(repoPath, inProgress);
-
-  const commitHash = await resolveBranchCommit(manifest, inProgress);
-  await finalizeRun(manifest, inProgress, status, commitHash);
   await saveManifest(manifest);
-
   await runGit(["-C", repoPath, "checkout", baseBranch]);
 
   console.log(
@@ -383,28 +364,27 @@ function validateTargetRepo(value: string): SubjectRepositoryKey {
 function selectedRunIdsForDecision(
   runs: ExperimentRun[],
   pairId: string,
-  decision: "composer-2" | "gpt-5.5-high" | "both" | "neither",
+  decision: SelectionDecision,
 ): string[] {
   if (decision === "neither") {
     return [];
   }
 
   const succeededRuns = runs.filter((run) => run.pairId === pairId && run.status === "succeeded");
-  const selectedRuns =
-    decision === "both" ? succeededRuns : succeededRuns.filter((run) => run.model === decision);
 
   if (decision === "both") {
-    const hasComposer = selectedRuns.some((run) => run.model === "composer-2");
-    const hasGpt = selectedRuns.some((run) => run.model === "gpt-5.5-high");
+    const hasComposer = succeededRuns.some((run) => run.model === "composer-2");
+    const hasGpt = succeededRuns.some((run) => run.model === "gpt-5.5-high");
     if (!hasComposer || !hasGpt) {
       throw new Error("Decision 'both' requires succeeded runs for both models in the pair.");
     }
+    return succeededRuns.map((run) => run.runId);
   }
 
-  if (decision !== "both" && selectedRuns.length === 0) {
+  const selectedRuns = succeededRuns.filter((run) => run.model === decision);
+  if (selectedRuns.length === 0) {
     throw new Error(`Decision '${decision}' requires a succeeded run for that model in the pair.`);
   }
-
   return selectedRuns.map((run) => run.runId);
 }
 

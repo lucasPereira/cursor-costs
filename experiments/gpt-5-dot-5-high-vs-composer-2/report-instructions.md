@@ -33,13 +33,13 @@ Describes the experiment design and how it was executed. Must include:
 
 - Paired design with alternating model order across functions to reduce carryover bias.
 - Each migration runs in a fresh session/window per model.
-- Agent-written qualitative analyses use the Opus 4.7 model, not `composer-2` or `gpt-5.5-high`, so the reviewer is independent of the models under test and the qualitative reading is not biased toward either one.
+- Agent-written qualitative analyses use the `claude-opus-4-7-thinking-medium` model, not `composer-2` or `gpt-5.5-high`, so the reviewer is independent of the models under test and the qualitative reading is not biased toward either one.
 
 ### Results
 
 Presents the raw outputs of the experiment without interpretation. Must include:
 
-- The collected metrics tables sourced from `artifacts/analysis-results.json` (per-run usage, paired differences, global aggregates, selection breakdown).
+- The collected metrics tables sourced from `artifacts/analysis-results.json` (paired differences, global aggregates, selection breakdown).
 - The generated charts under `artifacts/charts/`, embedded or linked in the order they appear there.
 
 ### Analysis

@@ -7,7 +7,7 @@ description: Records observations for the most recent function pair in the gpt-5
 
 ## When to run
 
-Run this skill when the user invokes it by name and passes their own observations as free text. The skill always targets the latest pair in `experiments/gpt-5-dot-5-high-vs-composer-2/artifacts/runs.manifest.json`; never ask for a `pairId`. The user can invoke it after `npm run experiment:migrate-finish-second` (before `experiment:select`) or after `npm run experiment:select`. Both branches of the pair must be finalized (status `succeeded` or `failed`); abort with a clear message otherwise.
+Run this skill when the user invokes it by name and passes their own observations as free text. The skill always targets the latest pair in `experiments/gpt-5-dot-5-high-vs-composer-2/artifacts/runs.manifest.json`; never ask for a `pairId`. The user can invoke it after the second `npm run experiment:migrate-finish` of the pair (before `experiment:select`) or after `npm run experiment:select`. Both branches of the pair must be finalized (status `succeeded` or `failed`); abort with a clear message otherwise.
 
 ## Inputs
 
@@ -24,6 +24,7 @@ Run this skill when the user invokes it by name and passes their own observation
 3. Append one entry to `artifacts/human-observations.md` using the template in that file, populated from the user's text and the per-run fields from the manifest. If the user wrote a single block of notes covering both runs, duplicate the block under each run's entry rather than splitting their words.
 4. Append one entry to `artifacts/agent-observations.md` using the template in that file. The content must come from your reading of the diffs and from cross-referencing the user's notes you just wrote. Do not assign numeric scores, rankings, or grades.
 5. Before writing, search both files for the current `pairId`. If an entry already exists, stop and tell the user; do not overwrite or append a duplicate.
+6. After writing both entries, end your message with a single line: `Next step: npm run experiment:download-csv` (or, if the user prefers to wait until the end of the experiment to analyze, mention that the download/analyze pair can be deferred).
 
 ## What to write in artifacts/agent-observations.md
 

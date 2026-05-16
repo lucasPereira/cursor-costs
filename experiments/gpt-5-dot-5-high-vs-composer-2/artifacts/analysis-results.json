@@ -2,97 +2,50 @@
   "schemaVersion": 1,
   "experimentId": "gpt-5-dot-5-high-vs-composer-2",
   "generatedAt": "2026-05-16T08:03:32.373Z",
-  "sourceCsv": "experiments/gpt-5-dot-5-high-vs-composer-2/cursor-usage.csv",
-  "runMetrics": [],
+  "sourceCsv": "experiments/gpt-5-dot-5-high-vs-composer-2/artifacts/cursor-usage.csv",
+  "pairedRows": [],
   "pairedMetrics": {
     "costDifference": {
-      "count": 0,
-      "total": 0,
+      "comparedPairs": 0,
       "median": null,
       "mean": null,
       "min": null,
-      "max": null,
-      "bootstrapMedianConfidenceInterval": null
+      "max": null
     },
     "totalTokenDifference": {
-      "count": 0,
-      "total": 0,
+      "comparedPairs": 0,
       "median": null,
       "mean": null,
       "min": null,
-      "max": null,
-      "bootstrapMedianConfidenceInterval": null
+      "max": null
     },
     "costPerTotalTokenDifference": {
-      "count": 0,
-      "total": 0,
+      "comparedPairs": 0,
       "median": null,
       "mean": null,
       "min": null,
-      "max": null,
-      "bootstrapMedianConfidenceInterval": null
-    },
-    "outputTokenRatioDifference": {
-      "count": 0,
-      "total": 0,
-      "median": null,
-      "mean": null,
-      "min": null,
-      "max": null,
-      "bootstrapMedianConfidenceInterval": null
-    },
-    "cacheReadRatioDifference": {
-      "count": 0,
-      "total": 0,
-      "median": null,
-      "mean": null,
-      "min": null,
-      "max": null,
-      "bootstrapMedianConfidenceInterval": null
-    },
-    "cacheWriteRatioDifference": {
-      "count": 0,
-      "total": 0,
-      "median": null,
-      "mean": null,
-      "min": null,
-      "max": null,
-      "bootstrapMedianConfidenceInterval": null
-    },
-    "nonCacheInputRatioDifference": {
-      "count": 0,
-      "total": 0,
-      "median": null,
-      "mean": null,
-      "min": null,
-      "max": null,
-      "bootstrapMedianConfidenceInterval": null
+      "max": null
     }
   },
-  "pairedRows": [],
   "globalMetrics": {
     "byModel": {
       "composer-2": {
         "totalCostUsd": 0,
-        "finishedRuns": 0,
         "succeededRuns": 0,
         "failedRuns": 0,
         "successRate": null,
         "medianCostPerSucceededRun": null,
         "medianTotalTokensPerSucceededRun": null,
-        "medianCostPerTotalToken": null,
-        "medianOutputTokenRatio": null
+        "medianCostPerTotalToken": null
       },
       "gpt-5.5-high": {
         "totalCostUsd": 0,
-        "finishedRuns": 0,
         "succeededRuns": 0,
         "failedRuns": 0,
         "successRate": null,
         "medianCostPerSucceededRun": null,
         "medianTotalTokensPerSucceededRun": null,
-        "medianCostPerTotalToken": null,
-        "medianOutputTokenRatio": null
+        "medianCostPerTotalToken": null
       }
     },
     "selectionBreakdown": {
@@ -109,89 +62,51 @@
         "neither": 0
       },
       "totalSelectedPairs": 0
-    },
-    "globalTests": {
-      "costPerSucceededRun": {
-        "test": "mann_whitney_u",
-        "n": 0,
-        "statistic": null,
-        "pValueApprox": null,
-        "effectSize": null,
-        "note": "Not enough values in both groups."
-      }
     }
   },
   "statisticalTests": {
     "costDifference": {
-      "test": "wilcoxon_signed_rank",
-      "n": 0,
-      "statistic": null,
-      "pValueApprox": null,
-      "effectSize": null,
-      "note": "Not enough non-zero paired differences."
+      "wilcoxon": {
+        "test": "wilcoxon_signed_rank",
+        "n": 0,
+        "statistic": null,
+        "pValueApprox": null,
+        "effectSize": null,
+        "note": "Not enough non-zero paired differences."
+      },
+      "bootstrapMedianConfidenceInterval": null
     },
     "totalTokenDifference": {
-      "test": "wilcoxon_signed_rank",
-      "n": 0,
-      "statistic": null,
-      "pValueApprox": null,
-      "effectSize": null,
-      "note": "Not enough non-zero paired differences."
+      "wilcoxon": {
+        "test": "wilcoxon_signed_rank",
+        "n": 0,
+        "statistic": null,
+        "pValueApprox": null,
+        "effectSize": null,
+        "note": "Not enough non-zero paired differences."
+      },
+      "bootstrapMedianConfidenceInterval": null
     },
     "costPerTotalTokenDifference": {
-      "test": "wilcoxon_signed_rank",
-      "n": 0,
-      "statistic": null,
-      "pValueApprox": null,
-      "effectSize": null,
-      "note": "Not enough non-zero paired differences."
-    },
-    "outputTokenRatioDifference": {
-      "test": "wilcoxon_signed_rank",
-      "n": 0,
-      "statistic": null,
-      "pValueApprox": null,
-      "effectSize": null,
-      "note": "Not enough non-zero paired differences."
-    },
-    "cacheReadRatioDifference": {
-      "test": "wilcoxon_signed_rank",
-      "n": 0,
-      "statistic": null,
-      "pValueApprox": null,
-      "effectSize": null,
-      "note": "Not enough non-zero paired differences."
-    },
-    "cacheWriteRatioDifference": {
-      "test": "wilcoxon_signed_rank",
-      "n": 0,
-      "statistic": null,
-      "pValueApprox": null,
-      "effectSize": null,
-      "note": "Not enough non-zero paired differences."
-    },
-    "nonCacheInputRatioDifference": {
-      "test": "wilcoxon_signed_rank",
-      "n": 0,
-      "statistic": null,
-      "pValueApprox": null,
-      "effectSize": null,
-      "note": "Not enough non-zero paired differences."
+      "wilcoxon": {
+        "test": "wilcoxon_signed_rank",
+        "n": 0,
+        "statistic": null,
+        "pValueApprox": null,
+        "effectSize": null,
+        "note": "Not enough non-zero paired differences."
+      },
+      "bootstrapMedianConfidenceInterval": null
     }
   },
   "charts": [
-    "experiments/gpt-5-dot-5-high-vs-composer-2/charts/paired-cost-difference.svg",
-    "experiments/gpt-5-dot-5-high-vs-composer-2/charts/paired-total-token-difference.svg",
-    "experiments/gpt-5-dot-5-high-vs-composer-2/charts/paired-cost-per-total-token-difference.svg",
-    "experiments/gpt-5-dot-5-high-vs-composer-2/charts/paired-output-token-ratio-difference.svg",
-    "experiments/gpt-5-dot-5-high-vs-composer-2/charts/success-rate-by-model.svg",
-    "experiments/gpt-5-dot-5-high-vs-composer-2/charts/selection-breakdown.svg",
-    "experiments/gpt-5-dot-5-high-vs-composer-2/charts/median-cost-per-succeeded-run.svg",
-    "experiments/gpt-5-dot-5-high-vs-composer-2/charts/median-total-tokens-per-succeeded-run.svg",
-    "experiments/gpt-5-dot-5-high-vs-composer-2/charts/median-cost-per-total-token.svg",
-    "experiments/gpt-5-dot-5-high-vs-composer-2/charts/median-output-token-ratio.svg"
-  ],
-  "diagnostics": {
-    "warnings": []
-  }
+    "experiments/gpt-5-dot-5-high-vs-composer-2/artifacts/charts/paired-cost-difference.svg",
+    "experiments/gpt-5-dot-5-high-vs-composer-2/artifacts/charts/paired-total-token-difference.svg",
+    "experiments/gpt-5-dot-5-high-vs-composer-2/artifacts/charts/paired-cost-per-total-token-difference.svg",
+    "experiments/gpt-5-dot-5-high-vs-composer-2/artifacts/charts/success-rate-by-model.svg",
+    "experiments/gpt-5-dot-5-high-vs-composer-2/artifacts/charts/selection-breakdown.svg",
+    "experiments/gpt-5-dot-5-high-vs-composer-2/artifacts/charts/median-cost-per-succeeded-run.svg",
+    "experiments/gpt-5-dot-5-high-vs-composer-2/artifacts/charts/median-total-tokens-per-succeeded-run.svg",
+    "experiments/gpt-5-dot-5-high-vs-composer-2/artifacts/charts/median-cost-per-total-token.svg"
+  ]
 }

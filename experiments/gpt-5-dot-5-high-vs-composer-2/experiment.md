@@ -8,7 +8,7 @@ This experiment compares `gpt-5.5-high` and `composer-2` while migrating Firebas
 
 For every function, create one run for `composer-2` and one run for `gpt-5.5-high`. Each run gets its own branch using `chore/migrate-<function-name>/<model>`, its own `runId`, and a shared `pairId` for the function.
 
-The operator workflow uses three commands per pair: `experiment:migrate-start` to begin, `experiment:migrate-finish-first` after the first migration, and `experiment:migrate-finish-second` after the second migration. Each command appends to or updates `artifacts/runs.manifest.json` (creating the pair, registering each run, and writing `status`, `endedAt`, and the resolved `commit`) alongside the corresponding Git operations in the submodule. See `commands.md` for the full pipeline and the low level fallback.
+The operator workflow uses two commands per pair: `experiment:migrate-start` to begin and `experiment:migrate-finish` after each of the two migrations (the same command handles both, inferring first or second from the manifest's in-progress run). Each command appends to or updates `artifacts/runs.manifest.json` (creating the pair, registering each run, and writing `status`, `endedAt`, and the resolved `commit`) alongside the corresponding Git operations in the submodule. See `commands.md` for the full pipeline.
 
 After both migrations finish, record the selected result for the pair with `npm run experiment:select -- --decision <composer-2|gpt-5.5-high|both|neither>`. This command also writes back into `artifacts/runs.manifest.json`, setting `selectedDecision`, `selectedAt`, and `selectedRunIds` on the latest open pair, so you do not pass a `pairId`. Alternate which model runs first across functions to reduce carryover bias.
 
@@ -16,12 +16,14 @@ Around the same time, invoke the `register-observations` skill and pass your own
 
 After each pair, or at the end of the experiment, refresh the usage data and rebuild the analysis with `npm run experiment:download-csv` followed by `npm run experiment:analyze`. The first command pulls the latest Cursor usage CSV into `artifacts/cursor-usage.csv`. The second command always regenerates `artifacts/analysis-results.json` and every SVG under `artifacts/charts/` from scratch, overwriting whatever was there before; it does not patch the previous results. Both commands are idempotent given the same inputs.
 
+Once the analysis is fresh, invoke the `update-final-report` skill to refresh `artifacts/final-report.md` against the new artifacts. The skill preserves text that is still correct, shows the diff plus the list of newly migrated functions, and only commits after you approve.
+
 ## Folder layout
 
 The experiment folder separates static specs from artifacts that the commands and the skill keep rewriting.
 
 - Static specs at the root: `experiment.md`, `commands.md`, `report-instructions.md`. These are written by hand and only change when the experiment design changes.
-- Live artifacts in `artifacts/`: `runs.manifest.json`, `cursor-usage.csv`, `human-observations.md`, `agent-observations.md`, `analysis-results.json`, `final-report.md`, and `charts/`. These are produced or appended by `npm run experiment:*` and by the `register-observations` skill.
+- Live artifacts in `artifacts/`: `runs.manifest.json`, `cursor-usage.csv`, `human-observations.md`, `agent-observations.md`, `analysis-results.json`, `final-report.md`, and `charts/`. These are produced or appended by `npm run experiment:*` and by the `register-observations` and `update-final-report` skills.
 - Subject code at the root: `messengerx-workspace/` is a Git submodule, not an artifact; the commands check out branches there but never write files outside Git's normal flow.
 
 ## Data sources

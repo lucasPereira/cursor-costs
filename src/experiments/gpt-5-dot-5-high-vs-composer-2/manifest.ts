@@ -15,6 +15,9 @@ export const SELECTION_DECISIONS: SelectionDecision[] = ["composer-2", "gpt-5.5-
 export async function loadManifest(): Promise<ExperimentManifest> {
   const json = await readFile(MANIFEST_PATH, "utf8");
   const parsed = JSON.parse(json) as ExperimentManifest;
+  if (parsed.nextFirstModel === undefined) {
+    parsed.nextFirstModel = "composer-2";
+  }
   validateManifest(parsed);
   return parsed;
 }
@@ -86,6 +89,7 @@ function validateManifest(manifest: ExperimentManifest): void {
   for (const model of manifest.models) {
     validateModel(model);
   }
+  validateModel(manifest.nextFirstModel);
   const runIds = new Set<string>();
   for (const run of manifest.runs) {
     if (runIds.has(run.runId)) {

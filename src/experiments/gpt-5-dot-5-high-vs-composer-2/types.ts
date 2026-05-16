@@ -14,6 +14,7 @@ export type ExperimentManifest = {
   timezone: string;
   models: ModelName[];
   branchPattern: string;
+  nextFirstModel: ModelName;
   subjectWorkspace: {
     path: string;
     branch: string;
@@ -61,18 +62,5 @@ export type RunAnalysis = {
   usage: UsageMetrics;
   derived: {
     costPerTotalToken: number | null;
-    outputTokenRatio: number | null;
-    cacheReadRatio: number | null;
-    cacheWriteRatio: number | null;
-    nonCacheInputRatio: number | null;
   };
-  git: GitMetrics | null;
-  warnings: string[];
-};
-
-export type GitMetrics = {
-  changedFiles: number;
-  addedLines: number;
-  removedLines: number;
-  commitCount: number;
 };

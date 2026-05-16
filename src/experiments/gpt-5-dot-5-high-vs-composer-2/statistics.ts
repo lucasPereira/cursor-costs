@@ -1,6 +1,5 @@
 export type SummaryStats = {
   count: number;
-  total: number;
   median: number | null;
   mean: number | null;
   min: number | null;
@@ -8,7 +7,7 @@ export type SummaryStats = {
 };
 
 export type TestResult = {
-  test: "wilcoxon_signed_rank" | "mann_whitney_u";
+  test: "wilcoxon_signed_rank";
   n: number;
   statistic: number | null;
   pValueApprox: number | null;
@@ -18,12 +17,10 @@ export type TestResult = {
 
 export function summarize(values: number[]): SummaryStats {
   const clean = values.filter(Number.isFinite).sort((left, right) => left - right);
-  const total = clean.reduce((sum, value) => sum + value, 0);
   return {
     count: clean.length,
-    total,
     median: percentileSorted(clean, 0.5),
-    mean: clean.length === 0 ? null : total / clean.length,
+    mean: clean.length === 0 ? null : clean.reduce((sum, value) => sum + value, 0) / clean.length,
     min: clean[0] ?? null,
     max: clean.at(-1) ?? null,
   };
@@ -69,41 +66,6 @@ export function wilcoxonSignedRank(differences: number[]): TestResult {
     statistic,
     pValueApprox,
     effectSize: Math.abs(z) / Math.sqrt(n),
-  };
-}
-
-export function mannWhitneyU(left: number[], right: number[]): TestResult {
-  const leftClean = left.filter(Number.isFinite);
-  const rightClean = right.filter(Number.isFinite);
-  if (leftClean.length < 2 || rightClean.length < 2) {
-    return {
-      test: "mann_whitney_u",
-      n: leftClean.length + rightClean.length,
-      statistic: null,
-      pValueApprox: null,
-      effectSize: null,
-      note: "Not enough values in both groups.",
-    };
-  }
-
-  const combined = [
-    ...leftClean.map((value) => ({ value, group: "left" as const })),
-    ...rightClean.map((value) => ({ value, group: "right" as const })),
-  ].sort((a, b) => a.value - b.value);
-  const ranks = rankSortedValues(combined.map((item) => item.value));
-  const leftRankSum = combined.reduce((sum, item, index) => sum + (item.group === "left" ? ranks[index] : 0), 0);
-  const n1 = leftClean.length;
-  const n2 = rightClean.length;
-  const u1 = leftRankSum - (n1 * (n1 + 1)) / 2;
-  const mean = (n1 * n2) / 2;
-  const variance = (n1 * n2 * (n1 + n2 + 1)) / 12;
-  const z = (u1 - mean) / Math.sqrt(variance);
-  return {
-    test: "mann_whitney_u",
-    n: n1 + n2,
-    statistic: u1,
-    pValueApprox: 2 * (1 - normalCdf(Math.abs(z))),
-    effectSize: Math.abs(z) / Math.sqrt(n1 + n2),
   };
 }
 
