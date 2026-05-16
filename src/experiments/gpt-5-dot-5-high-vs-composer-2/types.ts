@@ -14,7 +14,6 @@ export type ExperimentManifest = {
   timezone: string;
   models: ModelName[];
   branchPattern: string;
-  artifactPath: string;
   subjectWorkspace: {
     path: string;
     branch: string;

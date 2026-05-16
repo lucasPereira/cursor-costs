@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "experimentId": "gpt-5-dot-5-high-vs-composer-2",
+  "timezone": "America/Sao_Paulo",
+  "models": [
+    "composer-2",
+    "gpt-5.5-high"
+  ],
+  "branchPattern": "chore/migrate-<function-name>/<model>",
+  "subjectWorkspace": {
+    "path": "experiments/gpt-5-dot-5-high-vs-composer-2/messengerx-workspace",
+    "branch": "dev",
+    "repositories": {
+      "messengerx_backend": {
+        "path": "messengerx_backend",
+        "baseBranch": "dev"
+      },
+      "messengerx_firebase": {
+        "path": "messengerx_firebase",
+        "baseBranch": "develop"
+      }
+    }
+  },
+  "pairs": [],
+  "runs": []
+}

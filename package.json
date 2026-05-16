@@ -9,12 +9,13 @@
     "headless": "HEADED=0 tsx src/index.ts",
     "headed": "HEADED=1 tsx src/index.ts",
     "monitor": "tsx src/monitor.ts",
-    "experiment:start": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts start",
-    "experiment:finish": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts finish",
+    "experiment:bootstrap-submodules": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts bootstrap-submodules",
+    "experiment:migrate-start": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts migrate-start",
+    "experiment:migrate-finish-first": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts migrate-finish-first",
+    "experiment:migrate-finish-second": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts migrate-finish-second",
     "experiment:select": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts select",
     "experiment:download-csv": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts download-csv",
-    "experiment:analyze": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts analyze",
-    "experiment:bootstrap-submodules": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts bootstrap-submodules"
+    "experiment:analyze": "tsx src/experiments/gpt-5-dot-5-high-vs-composer-2/experimentCli.ts analyze"
   },
   "keywords": [],
   "author": "",

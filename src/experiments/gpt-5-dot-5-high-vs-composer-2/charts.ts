@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { CHARTS_DIR } from "./paths.js";
@@ -10,6 +10,7 @@ export type ChartDatum = {
 
 export async function writeCharts(charts: Record<string, ChartDatum[]>): Promise<string[]> {
   await mkdir(CHARTS_DIR, { recursive: true });
+  await clearExistingCharts();
   const written: string[] = [];
   for (const [name, data] of Object.entries(charts)) {
     const filePath = path.join(CHARTS_DIR, `${name}.svg`);
@@ -17,6 +18,15 @@ export async function writeCharts(charts: Record<string, ChartDatum[]>): Promise
     written.push(filePath);
   }
   return written;
+}
+
+async function clearExistingCharts(): Promise<void> {
+  const entries = await readdir(CHARTS_DIR);
+  await Promise.all(
+    entries
+      .filter((entry) => entry.endsWith(".svg"))
+      .map((entry) => unlink(path.join(CHARTS_DIR, entry))),
+  );
 }
 
 function renderBarChart(title: string, data: ChartDatum[]): string {
