@@ -11,7 +11,7 @@ Run this skill when the user invokes it by name and passes their own observation
 
 ## Inputs
 
-- The user's free-text observations passed in the invocation message. Treat this text verbatim, do not rewrite or summarize it.
+- The user's free-text observations passed in the invocation message. Normalize them before writing: if the text is not in English, translate it to English; otherwise keep it as is. In both cases preserve the user's meaning, tone, and ordering, and do not summarize, expand, soften, or add interpretation. Keep code identifiers, file paths, branch names, and model names exactly as written.
 - `experiments/gpt-5-dot-5-high-vs-composer-2/artifacts/runs.manifest.json` for the pair, its two runs, branches, statuses, and (when set) `selectedDecision`.
 - The MessengerX submodule diffs for both branches. Resolve the path from the manifest: `subjectWorkspace.path` joined with `subjectWorkspace.repositories[<targetRepo>].path`.
 
@@ -21,7 +21,7 @@ Run this skill when the user invokes it by name and passes their own observation
 2. Collect the diffs for each run against its `baseBranch`, running inside the submodule path:
    - `git -C <submodulePath> diff --stat refs/heads/<baseBranch>...refs/heads/<branch>`
    - `git -C <submodulePath> diff refs/heads/<baseBranch>...refs/heads/<branch>`
-3. Append one entry to `artifacts/human-observations.md` using the template in that file, populated from the user's text and the per-run fields from the manifest. If the user wrote a single block of notes covering both runs, duplicate the block under each run's entry rather than splitting their words.
+3. Append one entry to `artifacts/human-observations.md` using the template in that file, populated from the user's text and the per-run fields from the manifest. Apply the input normalization described in `Inputs` (translate to English when needed, otherwise keep as is) before writing. If the user wrote a single block of notes covering both runs, duplicate the block under each run's entry rather than splitting their words.
 4. Append one entry to `artifacts/agent-observations.md` using the template in that file. The content must come from your reading of the diffs and from cross-referencing the user's notes you just wrote. Do not assign numeric scores, rankings, or grades.
 5. Before writing, search both files for the current `pairId`. If an entry already exists, stop and tell the user; do not overwrite or append a duplicate.
 6. After writing both entries, end your message with a single line: `Next step: npm run experiment:download-csv` (or, if the user prefers to wait until the end of the experiment to analyze, mention that the download/analyze pair can be deferred).
