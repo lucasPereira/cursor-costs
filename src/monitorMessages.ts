@@ -2,20 +2,16 @@ export function limitExceededTitle(): string {
   return "Cursor daily spend limit exceeded";
 }
 
-export function limitExceededBody(spendUsd: number, overLimitUsd: number): string {
-  return (
-    `${formatUsd(spendUsd)}`
-  );
+export function limitExceededBody(spendUsd: number): string {
+  return `${formatUsd(spendUsd)}`;
 }
 
 export function routineUsageDesktopTitle(): string {
   return "Cursor usage";
 }
 
-export function routineUsageDesktopBody(currentSpendUsd: number, previousSpendUsd: number): string {
-  return (
-    `${formatUsd(currentSpendUsd)}`
-  );
+export function routineUsageDesktopBody(currentSpendUsd: number): string {
+  return `${formatUsd(currentSpendUsd)}`;
 }
 
 export function startupBannerLine(intervalMinutes: number, thresholdUsd: number): string {

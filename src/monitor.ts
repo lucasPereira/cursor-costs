@@ -153,9 +153,8 @@ async function runCheck(): Promise<void> {
     const crossedAbove = nowOver && previousWasOver !== true;
 
     if (crossedAbove) {
-      const overBy = spend - threshold;
       const title = limitExceededTitle();
-      const message = limitExceededBody(spend, overBy);
+      const message = limitExceededBody(spend);
 
       try {
         notifyDesktop(title, message, { tone: "limitExceeded" });
@@ -177,8 +176,7 @@ async function runCheck(): Promise<void> {
     const isFirstSuccessfulRead = previousTodaySpend === undefined;
 
     if (!crossedAbove && (isFirstSuccessfulRead || spendChanged)) {
-      const prevSpend = previousTodaySpend ?? spend;
-      const message = routineUsageDesktopBody(spend, prevSpend);
+      const message = routineUsageDesktopBody(spend);
       try {
         notifyDesktop(routineUsageDesktopTitle(), message);
       } catch (error) {

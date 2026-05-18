@@ -1,6 +1,5 @@
 .env
 node_modules/
 downloads/
-dist/
 .playwright/
 .DS_Store

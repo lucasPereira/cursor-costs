@@ -3,9 +3,7 @@
   "version": "1.0.0",
   "description": "Download Cursor usage CSV and print spend summaries.",
   "type": "module",
-  "main": "dist/index.js",
   "scripts": {
-    "build": "tsc --noEmit",
     "headless": "HEADED=0 tsx src/index.ts",
     "headed": "HEADED=1 tsx src/index.ts",
     "monitor": "tsx src/monitor.ts"
