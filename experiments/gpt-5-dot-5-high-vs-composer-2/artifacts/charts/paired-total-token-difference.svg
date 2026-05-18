@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" viewBox="0 0 900 360" role="img" aria-label="paired-total-token-difference">
-  <rect width="100%" height="100%" fill="white" />
-  <text x="96" y="28" font-size="18" font-weight="600">paired-total-token-difference</text>
-  <line x1="96" y1="48" x2="876" y2="48" stroke="#111827" stroke-width="1" />
-  <line x1="96" y1="48" x2="96" y2="264" stroke="#111827" stroke-width="1" />
-  <text x="84" y="52" text-anchor="end" font-size="11">0.00</text>
-  <text x="84" y="264" text-anchor="end" font-size="11">0.00</text>
-  
-</svg>

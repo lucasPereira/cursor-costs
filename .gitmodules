@@ -1,3 +1,0 @@
-[submodule "experiments/gpt-5-dot-5-high-vs-composer-2/messengerx-workspace"]
-	path = experiments/gpt-5-dot-5-high-vs-composer-2/messengerx-workspace
-	url = git@github.com:ovenbits/messengerx-workspace.git
