@@ -33,6 +33,19 @@ export function parseHeadedEnv(): boolean {
 
 type CsvRow = Record<string, string | undefined>;
 
+type SpendPeriod = {
+  label?: string;
+  total: number;
+  byModel: Map<string, number>;
+};
+
+type SelectedModels = {
+  visible: string[];
+  omitted: string[];
+};
+
+const FALLBACK_VISIBLE_MODEL_COUNT = 5;
+
 async function launchBrowser(): Promise<BrowserContext> {
   await mkdir(DOWNLOADS_DIR, { recursive: true });
   await mkdir(PROFILE_DIR, { recursive: true });
@@ -369,8 +382,8 @@ export function printCosts(rows: UsageRow[], hasModelColumn: boolean): void {
   const today = new Date();
   const { byDay, models } = aggregateByDayAndModel(rows, hasModelColumn);
 
-  const dailyOutput: Record<string, string>[] = [];
-  const weeklyOutput: Record<string, string>[] = [];
+  const dailyPeriods: SpendPeriod[] = [];
+  const weeklyPeriods: SpendPeriod[] = [];
   let weekStart = startOfCurrentWeek(new Date(today.getFullYear(), today.getMonth(), 1));
   const weekModelSpend = new Map<string, number>();
   for (const model of models) {
@@ -395,15 +408,15 @@ export function printCosts(rows: UsageRow[], hasModelColumn: boolean): void {
     monthlyTotal += dayTotal;
     weekTotalSpend += dayTotal;
 
-    const dayRow: Record<string, string> = { Day: dayKey, Total: money(dayTotal) };
+    const dayByModel = new Map<string, number>();
     if (hasModelColumn && models.length > 0) {
       for (const model of models) {
         const part = dayMap.get(model) ?? 0;
-        dayRow[model] = money(part);
+        dayByModel.set(model, part);
         monthlyByModel.set(model, (monthlyByModel.get(model) ?? 0) + part);
       }
     }
-    dailyOutput.push(dayRow);
+    dailyPeriods.push({ label: dayKey, total: dayTotal, byModel: dayByModel });
 
     if (hasModelColumn && models.length > 0) {
       for (const model of models) {
@@ -415,16 +428,11 @@ export function printCosts(rows: UsageRow[], hasModelColumn: boolean): void {
     const isSunday = day.getDay() === 0;
     const isToday = dayKey === toDateKey(today);
     if (isSunday || isToday) {
-      const weekRow: Record<string, string> = {
-        Week: `${toDateKey(maxDate(weekStart, firstDayOfCurrentMonth()))} to ${dayKey}`,
-        Total: money(weekTotalSpend),
-      };
-      if (hasModelColumn && models.length > 0) {
-        for (const model of models) {
-          weekRow[model] = money(weekModelSpend.get(model) ?? 0);
-        }
-      }
-      weeklyOutput.push(weekRow);
+      weeklyPeriods.push({
+        label: `${toDateKey(maxDate(weekStart, firstDayOfCurrentMonth()))} to ${dayKey}`,
+        total: weekTotalSpend,
+        byModel: new Map(weekModelSpend),
+      });
 
       weekStart = addDays(day, 1);
       weekTotalSpend = 0;
@@ -435,20 +443,148 @@ export function printCosts(rows: UsageRow[], hasModelColumn: boolean): void {
   }
 
   console.log("\nSpend per day");
-  console.table(dailyOutput);
+  printSpendTable("Day", dailyPeriods, hasModelColumn ? models : []);
 
   console.log("\nSpend per week");
-  console.table(weeklyOutput);
+  printSpendTable("Week", weeklyPeriods, hasModelColumn ? models : []);
 
   if (hasModelColumn && models.length > 0) {
-    const monthRow: Record<string, string> = { Total: money(monthlyTotal) };
-    for (const model of models) {
-      monthRow[model] = money(monthlyByModel.get(model) ?? 0);
-    }
     console.log("\nSpend per month");
-    console.table([monthRow]);
+    printSpendTable(undefined, [{ total: monthlyTotal, byModel: monthlyByModel }], models);
   }
   console.log("");
+}
+
+function printSpendTable(labelColumn: string | undefined, periods: SpendPeriod[], models: string[]): void {
+  console.table(spendTableRows(labelColumn, periods, models));
+}
+
+function spendTableRows(
+  labelColumn: string | undefined,
+  periods: SpendPeriod[],
+  models: string[],
+): Record<string, string>[] {
+  const { visible, omitted } = selectModelsForConsoleTable(labelColumn, periods, models);
+
+  return periods.map((period) => {
+    const row: Record<string, string> = {};
+    if (labelColumn) {
+      row[labelColumn] = period.label ?? "";
+    }
+    row.Total = money(period.total);
+
+    for (const model of visible) {
+      row[model] = money(period.byModel.get(model) ?? 0);
+    }
+
+    if (omitted.length > 0) {
+      row.Other = money(sumModels(period.byModel, omitted));
+    }
+
+    return row;
+  });
+}
+
+function selectModelsForConsoleTable(
+  labelColumn: string | undefined,
+  periods: SpendPeriod[],
+  models: string[],
+): SelectedModels {
+  const maxWidth = terminalWidth();
+  if (maxWidth === undefined) {
+    return splitVisibleModels(models, FALLBACK_VISIBLE_MODEL_COUNT);
+  }
+
+  if (consoleTableWidth(labelColumn, periods, { visible: models, omitted: [] }) <= maxWidth) {
+    return { visible: models, omitted: [] };
+  }
+
+  const visible: string[] = [];
+  for (const model of models) {
+    const candidateVisible = [...visible, model];
+    const candidate = {
+      visible: candidateVisible,
+      omitted: models.filter((name) => !candidateVisible.includes(name)),
+    };
+
+    if (consoleTableWidth(labelColumn, periods, candidate) > maxWidth) {
+      break;
+    }
+
+    visible.push(model);
+  }
+
+  return {
+    visible,
+    omitted: models.filter((name) => !visible.includes(name)),
+  };
+}
+
+function splitVisibleModels(models: string[], visibleCount: number): SelectedModels {
+  return {
+    visible: models.slice(0, visibleCount),
+    omitted: models.slice(visibleCount),
+  };
+}
+
+function consoleTableWidth(
+  labelColumn: string | undefined,
+  periods: SpendPeriod[],
+  selection: SelectedModels,
+): number {
+  const labels = [
+    "(index)",
+    ...(labelColumn ? [labelColumn] : []),
+    "Total",
+    ...selection.visible,
+    ...(selection.omitted.length > 0 ? ["Other"] : []),
+  ];
+  const widths = labels.map((label) => label.length);
+  const lastIndex = Math.max(periods.length - 1, 0);
+  widths[0] = Math.max(widths[0] ?? 0, String(lastIndex).length);
+
+  periods.forEach((period, rowIndex) => {
+    let columnIndex = 0;
+    widths[columnIndex] = Math.max(widths[columnIndex] ?? 0, String(rowIndex).length);
+    columnIndex += 1;
+
+    if (labelColumn) {
+      widths[columnIndex] = Math.max(widths[columnIndex] ?? 0, consoleTableStringWidth(period.label ?? ""));
+      columnIndex += 1;
+    }
+
+    widths[columnIndex] = Math.max(widths[columnIndex] ?? 0, consoleTableStringWidth(money(period.total)));
+    columnIndex += 1;
+
+    for (const model of selection.visible) {
+      widths[columnIndex] = Math.max(
+        widths[columnIndex] ?? 0,
+        consoleTableStringWidth(money(period.byModel.get(model) ?? 0)),
+      );
+      columnIndex += 1;
+    }
+
+    if (selection.omitted.length > 0) {
+      widths[columnIndex] = Math.max(
+        widths[columnIndex] ?? 0,
+        consoleTableStringWidth(money(sumModels(period.byModel, selection.omitted))),
+      );
+    }
+  });
+
+  return widths.reduce((sum, width) => sum + width, 0) + widths.length * 3 + 1;
+}
+
+function consoleTableStringWidth(value: string): number {
+  return value.length + 2;
+}
+
+function sumModels(values: Map<string, number>, models: string[]): number {
+  return models.reduce((sum, model) => sum + (values.get(model) ?? 0), 0);
+}
+
+function terminalWidth(): number | undefined {
+  return process.stdout.columns && process.stdout.columns > 0 ? process.stdout.columns : undefined;
 }
 
 function findModelColumn(columns: string[], skip: Set<string>): string | undefined {
