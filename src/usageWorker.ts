@@ -1,17 +1,14 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { parse } from "csv-parse/sync";
-import { chromium, type BrowserContext, type Locator, type Page } from "playwright";
+import { chromium, type BrowserContext, type Page, type Request } from "playwright";
 
 const CURSOR_USAGE_URL = "https://cursor.com/dashboard/usage";
 const DOWNLOADS_DIR = "downloads";
 const PROFILE_DIR = ".playwright/cursor-profile";
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const USAGE_EVENTS_ENDPOINT = "/api/dashboard/get-filtered-usage-events";
 
 /** Throws if HEADED is unset or not a recognized boolean string. */
 export function parseHeadedEnv(): boolean {
@@ -29,6 +26,27 @@ export function parseHeadedEnv(): boolean {
     return false;
   }
   throw new Error('HEADED must be one of: 0, 1, true, false, yes, no (case insensitive).');
+}
+
+/**
+ * When true, Included (plan) rows keep their notional API cost. When false,
+ * those rows are written as Cost 0.00. Throws if COUNT_INCLUDED is unset.
+ */
+export function parseCountIncludedEnv(): boolean {
+  const raw = process.env.COUNT_INCLUDED?.trim();
+  if (raw === undefined || raw === "") {
+    throw new Error(
+      'Define COUNT_INCLUDED in your environment or .env file: use "0", "false", or "no" to zero Included costs, or "1", "true", or "yes" to count notional Included costs.',
+    );
+  }
+  const value = raw.toLowerCase();
+  if (value === "1" || value === "true" || value === "yes") {
+    return true;
+  }
+  if (value === "0" || value === "false" || value === "no") {
+    return false;
+  }
+  throw new Error('COUNT_INCLUDED must be one of: 0, 1, true, false, yes, no (case insensitive).');
 }
 
 type CsvRow = Record<string, string | undefined>;
@@ -68,7 +86,23 @@ async function launchBrowser(): Promise<BrowserContext> {
   }
 }
 
-export async function downloadCsv(): Promise<string> {
+export type DownloadCsvOptions = {
+  /** First day of the range (default: first day of the current local month). */
+  startDate?: Date;
+  /** When true, Included rows keep chargedCents/100; when false they are 0. */
+  countIncluded?: boolean;
+};
+
+/**
+ * Builds a CSV via the dashboard usage API instead of the Download CSV button.
+ * Native export puts "-" in Cost for Included rows, which drops them from
+ * totals; the API returns chargedCents for those events so we can zero or
+ * count them via countIncluded.
+ */
+export async function downloadCsv(options: DownloadCsvOptions = {}): Promise<string> {
+  const startDate = options.startDate ?? firstDayOfCurrentMonth();
+  const countIncluded = options.countIncluded ?? parseCountIncludedEnv();
+
   const browser = await launchBrowser();
   await browser.addInitScript(() => {
     Object.defineProperty(navigator, "webdriver", {
@@ -80,15 +114,13 @@ export async function downloadCsv(): Promise<string> {
     const page = browser.pages()[0] ?? (await browser.newPage());
     await page.goto(CURSOR_USAGE_URL, { waitUntil: "domcontentloaded" });
     await waitForLoginIfNeeded(page);
-    await selectUsageRangeCurrentMonth(page);
 
-    const downloadButton = await findDownloadButton(page);
-    const downloadPromise = page.waitForEvent("download", { timeout: 15_000 });
-    await downloadButton.click();
+    const queryBase = await captureUsageQueryBase(page);
+    const events = await fetchAllUsageEvents(page, queryBase, startDate, new Date());
+    const csv = usageEventsToCsv(events, countIncluded);
 
-    const download = await downloadPromise;
     const filePath = path.join(DOWNLOADS_DIR, `cursor-usage-${formatLocalTimestampForFilename(new Date())}.csv`);
-    await download.saveAs(filePath);
+    await writeFile(filePath, csv);
     return filePath;
   } finally {
     await browser.close();
@@ -113,195 +145,195 @@ async function waitForLoginIfNeeded(page: Page): Promise<void> {
   await page.waitForLoadState("networkidle").catch(() => undefined);
 }
 
-async function findDownloadButton(page: Page): Promise<Locator> {
-  const candidates = [
-    page.getByRole("button", { name: /csv|download|export/i }),
-    page.getByRole("link", { name: /csv|download|export/i }),
-    page.locator('a[href*="csv" i]'),
-    page.locator('button:has-text("CSV")'),
-  ];
+type UsageQueryBase = {
+  teamId?: number | string;
+  userId?: number | string;
+  [key: string]: unknown;
+};
 
-  for (const locator of candidates) {
-    const first = locator.first();
-    if ((await first.count()) > 0) {
-      return first;
-    }
-  }
+/**
+ * The dashboard date-range UI is unreliable to drive, so we reuse the same
+ * get-filtered-usage-events POST body the page fires on load (team/user scope)
+ * and only override dates and pagination.
+ */
+async function captureUsageQueryBase(page: Page): Promise<UsageQueryBase> {
+  let teamOnly: UsageQueryBase | undefined;
+  let resolveWithUser: (base: UsageQueryBase) => void = () => {};
+  const withUser = new Promise<UsageQueryBase>((resolve) => {
+    resolveWithUser = resolve;
+  });
 
-  throw new Error("Could not find a control to download the CSV.");
-}
-
-/** Cursor usage defaults to a short window (e.g. last 7 days). Select month-to-date (segmented control) or fall back to the date picker before export. */
-async function selectUsageRangeCurrentMonth(page: Page): Promise<void> {
-  await page.waitForLoadState("networkidle").catch(() => undefined);
-  await sleep(800);
-
-  const mtdClicked = await clickMonthToDateSegmentedControl(page);
-  if (mtdClicked) {
-    await page.waitForLoadState("networkidle").catch(() => undefined);
-    await sleep(1_500);
-    return;
-  }
-
-  const opened = await openUsageDateRangeControl(page);
-  if (!opened) {
-    console.warn(
-      "Could not find the usage date-range control; CSV may still reflect the dashboard default (e.g. last 7 days).",
-    );
-    return;
-  }
-
-  await sleep(400);
-
-  const presetClicked = await clickMonthPresetIfVisible(page);
-  if (presetClicked) {
-    await page.waitForLoadState("networkidle").catch(() => undefined);
-    await sleep(1200);
-    await page.keyboard.press("Escape").catch(() => undefined);
-    return;
-  }
-
-  await clickCustomRangeIfPresent(page);
-  const filled = await fillMonthRangeDateInputs(page);
-  if (filled) {
-    await clickApplyOrUpdateIfPresent(page);
-    await page.waitForLoadState("networkidle").catch(() => undefined);
-    await sleep(1200);
-    await page.keyboard.press("Escape").catch(() => undefined);
-    return;
-  }
-
-  console.warn(
-    "Could not set date range to the current month; CSV may still reflect the dashboard default (e.g. last 7 days).",
-  );
-  await page.keyboard.press("Escape").catch(() => undefined);
-}
-
-async function clickMonthToDateSegmentedControl(page: Page): Promise<boolean> {
-  const candidates: Locator[] = [
-    page.getByRole("button", { name: /^Month-to-date$/i }),
-    page.getByLabel(/^Month-to-date$/i),
-    page.locator('button.dashboard-segmented-control-option[aria-label="Month-to-date"]'),
-    page.locator('button[title="Month-to-date"]'),
-    page.locator("button.dashboard-segmented-control-option").filter({ hasText: /^MTD$/ }),
-  ];
-
-  for (const locator of candidates) {
-    const button = locator.first();
-    if ((await button.count()) === 0) {
-      continue;
-    }
-    if (!(await button.isVisible({ timeout: 3_000 }).catch(() => false))) {
-      continue;
-    }
-
-    const pressed = await button.getAttribute("aria-pressed");
-    if (pressed === "true") {
-      return true;
-    }
-
-    await button.click();
-    return true;
-  }
-
-  return false;
-}
-
-async function clickCustomRangeIfPresent(page: Page): Promise<void> {
-  const candidates = [
-    page.getByRole("menuitem", { name: /custom|pick dates|specific dates/i }),
-    page.getByRole("option", { name: /custom|pick dates|specific dates/i }),
-    page.getByText(/^Custom range$/i),
-    page.getByText(/^Custom$/i),
-  ];
-
-  for (const locator of candidates) {
-    const first = locator.first();
-    if (await first.isVisible({ timeout: 1_000 }).catch(() => false)) {
-      await first.click();
-      await sleep(400);
+  const onRequest = (request: Request) => {
+    if (request.method() !== "POST" || !request.url().includes(USAGE_EVENTS_ENDPOINT)) {
       return;
     }
-  }
-}
-
-async function openUsageDateRangeControl(page: Page): Promise<boolean> {
-  const triggers = [
-    page.getByRole("button", { name: /last\s*7|7\s*days|last\s*30|30\s*days|past\s*week|date\s*range|time\s*range|custom/i }),
-    page.getByRole("combobox").filter({ hasText: /day|week|month|last|past|range|\d{1,2}[./-]\d{1,2}/i }),
-    page.locator("header").getByRole("button").filter({ hasText: /\d|day|week|month|range|last|past/i }),
-  ];
-
-  for (const locator of triggers) {
-    const first = locator.first();
-    if ((await first.count()) === 0) {
-      continue;
+    const body = request.postDataJSON() as UsageQueryBase | null;
+    if (!body || body.teamId === undefined || body.teamId === null) {
+      return;
     }
-    if (await first.isVisible({ timeout: 2_500 }).catch(() => false)) {
-      await first.click();
-      return true;
+    if (body.userId !== undefined && body.userId !== null) {
+      resolveWithUser(body);
+      return;
     }
-  }
+    teamOnly ??= body;
+  };
 
-  return false;
-}
+  page.on("request", onRequest);
+  try {
+    await page.reload({ waitUntil: "domcontentloaded" }).catch(() => undefined);
+    const userScoped = await Promise.race([
+      withUser,
+      new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 30_000)),
+    ]);
 
-async function clickMonthPresetIfVisible(page: Page): Promise<boolean> {
-  const presets = [
-    page.getByRole("menuitem", { name: /this month|month to date|current month|mtd|billing month|billing period/i }),
-    page.getByRole("option", { name: /this month|month to date|current month|mtd|billing month|billing period/i }),
-    page.getByRole("button", { name: /this month|month to date|current month|mtd/i }),
-    page.getByText(/^This month$/i),
-    page.getByText(/^Month to date$/i),
-  ];
-
-  for (const locator of presets) {
-    const first = locator.first();
-    if ((await first.count()) === 0) {
-      continue;
+    const chosen = userScoped ?? teamOnly;
+    if (!chosen) {
+      throw new Error("Could not capture the usage dashboard's get-filtered-usage-events request.");
     }
-    if (await first.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await first.click();
-      return true;
+    return chosen;
+  } finally {
+    page.off("request", onRequest);
+  }
+}
+
+type RawUsageEvent = {
+  timestamp?: string;
+  model?: string;
+  kind?: string;
+  chargedCents?: number;
+  tokenUsage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheWriteTokens?: number;
+    cacheReadTokens?: number;
+  };
+};
+
+type UsageEventsResponse = {
+  totalUsageEventsCount?: number;
+  usageEventsDisplay?: RawUsageEvent[];
+};
+
+async function fetchAllUsageEvents(
+  page: Page,
+  queryBase: UsageQueryBase,
+  startDate: Date,
+  endDate: Date,
+): Promise<RawUsageEvent[]> {
+  const pageSize = 1_000;
+  const startMs = String(startDate.getTime());
+  const endMs = String(endDate.getTime());
+  const events: RawUsageEvent[] = [];
+  let total = Number.POSITIVE_INFINITY;
+
+  for (let pageNumber = 1; events.length < total && pageNumber <= 1_000; pageNumber += 1) {
+    const requestBody = {
+      ...queryBase,
+      startDate: startMs,
+      endDate: endMs,
+      page: pageNumber,
+      pageSize,
+    };
+
+    const response = (await page.evaluate(
+      async ({ endpoint, body }) => {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+          credentials: "include",
+        });
+        if (!res.ok) {
+          throw new Error(`Usage events request failed with HTTP ${res.status}`);
+        }
+        return res.json();
+      },
+      { endpoint: USAGE_EVENTS_ENDPOINT, body: requestBody },
+    )) as UsageEventsResponse;
+
+    total = Number(response.totalUsageEventsCount ?? 0);
+    const batch = response.usageEventsDisplay ?? [];
+    if (batch.length === 0) {
+      break;
     }
+    events.push(...batch);
   }
 
-  return false;
+  return events;
 }
 
-function localMonthRangeForDateInputs(): { start: string; end: string } {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const pad = (value: number) => String(value).padStart(2, "0");
-  const start = `${year}-${pad(month)}-01`;
-  const end = `${year}-${pad(month)}-${pad(now.getDate())}`;
-  return { start, end };
+const USAGE_CSV_HEADER =
+  "Date,User,Cloud Agent ID,Automation ID,Kind,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Total Tokens,Cost";
+
+function usageEventsToCsv(events: RawUsageEvent[], countIncluded: boolean): string {
+  const rows = events.flatMap((event) => {
+    if (!event.timestamp) {
+      return [];
+    }
+    const tokens = event.tokenUsage ?? {};
+    const inputWithCacheWrite = Number(tokens.cacheWriteTokens ?? 0);
+    const inputWithoutCacheWrite = Number(tokens.inputTokens ?? 0);
+    const cacheRead = Number(tokens.cacheReadTokens ?? 0);
+    const output = Number(tokens.outputTokens ?? 0);
+    const totalTokens = inputWithCacheWrite + inputWithoutCacheWrite + cacheRead + output;
+    const costUsd = eventCostUsd(event, countIncluded);
+
+    return [
+      [
+        new Date(Number(event.timestamp)).toISOString(),
+        "",
+        "",
+        "",
+        usageKindLabel(event.kind),
+        event.model ?? "",
+        "No",
+        inputWithCacheWrite,
+        inputWithoutCacheWrite,
+        cacheRead,
+        output,
+        totalTokens,
+        costUsd.toFixed(2),
+      ]
+        .map(csvField)
+        .join(","),
+    ];
+  });
+
+  return `${[USAGE_CSV_HEADER, ...rows].join("\n")}\n`;
 }
 
-async function fillMonthRangeDateInputs(page: Page): Promise<boolean> {
-  const dialog = page.locator('[role="dialog"]').first();
-  let inputs = dialog.locator('input[type="date"]');
-  let count = await inputs.count();
-  if (count < 2) {
-    inputs = page.locator('input[type="date"]');
-    count = await inputs.count();
+function eventCostUsd(event: RawUsageEvent, countIncluded: boolean): number {
+  if (isNotChargedKind(event.kind)) {
+    return 0;
   }
-  if (count < 2) {
-    return false;
+  if (event.kind === "USAGE_EVENT_KIND_INCLUDED_IN_BUSINESS" && !countIncluded) {
+    return 0;
   }
-
-  const { start, end } = localMonthRangeForDateInputs();
-  await inputs.nth(0).fill(start);
-  await inputs.nth(1).fill(end);
-  return true;
+  return Number(event.chargedCents ?? 0) / 100;
 }
 
-async function clickApplyOrUpdateIfPresent(page: Page): Promise<void> {
-  const apply = page.getByRole("button", { name: /apply|update|save|done|ok|set|confirm/i }).first();
-  if (await apply.isVisible({ timeout: 2_000 }).catch(() => false)) {
-    await apply.click();
+/** Errored / aborted / free kinds are never billed; Included is handled separately via countIncluded. */
+function isNotChargedKind(kind: string | undefined): boolean {
+  return kind === undefined ? false : /ERRORED|ABORTED|NOT_CHARGED|FREE/i.test(kind);
+}
+
+function usageKindLabel(kind: string | undefined): string {
+  switch (kind) {
+    case "USAGE_EVENT_KIND_USAGE_BASED":
+      return "On-Demand";
+    case "USAGE_EVENT_KIND_INCLUDED_IN_BUSINESS":
+      return "Included";
+    case "USAGE_EVENT_KIND_ERRORED_NOT_CHARGED":
+      return "Errored, No Charge";
+    case "USAGE_EVENT_KIND_ABORTED_NOT_CHARGED":
+      return "Aborted, Not Charged";
+    default:
+      return kind ?? "";
   }
+}
+
+function csvField(value: string | number): string {
+  return `"${String(value).replace(/"/g, '""')}"`;
 }
 
 export type UsageRow = { date: Date; cost: number; model: string };

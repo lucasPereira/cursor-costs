@@ -6,7 +6,10 @@
   "scripts": {
     "headless": "HEADED=0 tsx src/index.ts",
     "headed": "HEADED=1 tsx src/index.ts",
-    "monitor": "tsx src/monitor.ts"
+    "monitor": "tsx src/monitor.ts",
+    "headless:count-included": "HEADED=0 COUNT_INCLUDED=1 tsx src/index.ts",
+    "headed:count-included": "HEADED=1 COUNT_INCLUDED=1 tsx src/index.ts",
+    "monitor:count-included": "COUNT_INCLUDED=1 tsx src/monitor.ts"
   },
   "keywords": [],
   "author": "",

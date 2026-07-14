@@ -20,7 +20,13 @@ import {
   routineUsageDesktopTitle,
   startupBannerLine,
 } from "./monitorMessages.js";
-import { downloadCsv, parseHeadedEnv, readUsageRows, sumTodaySpendUsd } from "./usageWorker.js";
+import {
+  downloadCsv,
+  parseCountIncludedEnv,
+  parseHeadedEnv,
+  readUsageRows,
+  sumTodaySpendUsd,
+} from "./usageWorker.js";
 
 function intervalMs(): number {
   const raw = process.env.MONITOR_INTERVAL_MINUTES?.trim();
@@ -139,7 +145,7 @@ async function runCheck(): Promise<void> {
   let todaySpend: number | null = null;
 
   try {
-    const csvPath = await downloadCsv();
+    const csvPath = await downloadCsv({ countIncluded: parseCountIncludedEnv() });
     const { rows } = await readUsageRows(csvPath);
     const spend = sumTodaySpendUsd(rows);
     todaySpend = spend;
